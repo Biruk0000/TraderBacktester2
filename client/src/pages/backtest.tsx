@@ -71,11 +71,19 @@ export default function BacktestPage() {
     enabled: !!currentSessionId,
   }) as { data: SessionStats | undefined };
 
-  // Fetch current forex price
+  // Fetch current forex price based on session time
   const { data: currentPriceData } = useQuery({
-    queryKey: ["/api/forex/current", selectedPair],
-    refetchInterval: isPlaying ? 1000 : 5000, // Faster updates when playing
-  }) as { data: { pair: string; price: number } | undefined };
+    queryKey: ["/api/forex/current", selectedPair, currentSessionId],
+    queryFn: async () => {
+      const url = currentSessionId 
+        ? `/api/forex/current/${selectedPair}?sessionId=${currentSessionId}`
+        : `/api/forex/current/${selectedPair}`;
+      const res = await fetch(url);
+      return res.json();
+    },
+    refetchInterval: isPlaying ? 500 : 2000, // Faster updates when playing
+    enabled: !!selectedPair,
+  }) as { data: { pair: string; price: number; timestamp?: string } | undefined };
 
   // Update entry price when current price changes
   useEffect(() => {

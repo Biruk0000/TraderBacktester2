@@ -162,22 +162,92 @@ export default function TradingChart({ pair, currentPrice, trades }: TradingChar
           <div className="h-full flex items-center justify-center">
             {priceData.length > 0 ? (
               <div className="w-full h-full relative">
-                {/* Simple line chart representation */}
-                <svg className="w-full h-full">
-                  <polyline
-                    fill="none"
-                    stroke="#3b82f6"
-                    strokeWidth="2"
-                    points={priceData
-                      .slice(-50) // Show last 50 data points
-                      .map((price, index) => {
-                        const x = (index / 49) * 100;
-                        const y = 50 + (Math.sin(index * 0.2) * 20); // Mock chart movement
-                        return `${x}%,${y}%`;
-                      })
-                      .join(" ")}
-                  />
-                </svg>
+                {chartType === "line" ? (
+                  /* Line Chart */
+                  <svg className="w-full h-full">
+                    <polyline
+                      fill="none"
+                      stroke="#3b82f6"
+                      strokeWidth="2"
+                      points={priceData
+                        .slice(-100) // Show last 100 data points
+                        .map((price, index) => {
+                          const x = (index / 99) * 90 + 5; // 5% margin on each side
+                          const minPrice = Math.min(...priceData.slice(-100).map(p => parseFloat(p.close)));
+                          const maxPrice = Math.max(...priceData.slice(-100).map(p => parseFloat(p.close)));
+                          const priceRange = maxPrice - minPrice || 1;
+                          const y = 10 + ((maxPrice - parseFloat(price.close)) / priceRange) * 80; // 10% margin top/bottom
+                          return `${x}%,${y}%`;
+                        })
+                        .join(" ")}
+                    />
+                    {/* Price action dots */}
+                    {priceData.slice(-100).map((price, index) => {
+                      const x = (index / 99) * 90 + 5;
+                      const minPrice = Math.min(...priceData.slice(-100).map(p => parseFloat(p.close)));
+                      const maxPrice = Math.max(...priceData.slice(-100).map(p => parseFloat(p.close)));
+                      const priceRange = maxPrice - minPrice || 1;
+                      const y = 10 + ((maxPrice - parseFloat(price.close)) / priceRange) * 80;
+                      return (
+                        <circle
+                          key={price.id}
+                          cx={`${x}%`}
+                          cy={`${y}%`}
+                          r="2"
+                          fill="#3b82f6"
+                          opacity="0.7"
+                        />
+                      );
+                    })}
+                  </svg>
+                ) : (
+                  /* Candlestick Chart */
+                  <svg className="w-full h-full">
+                    {priceData.slice(-50).map((price, index) => {
+                      const x = (index / 49) * 90 + 5;
+                      const minPrice = Math.min(...priceData.slice(-50).map(p => Math.min(parseFloat(p.high), parseFloat(p.low))));
+                      const maxPrice = Math.max(...priceData.slice(-50).map(p => Math.max(parseFloat(p.high), parseFloat(p.low))));
+                      const priceRange = maxPrice - minPrice || 1;
+                      
+                      const open = parseFloat(price.open);
+                      const close = parseFloat(price.close);
+                      const high = parseFloat(price.high);
+                      const low = parseFloat(price.low);
+                      
+                      const openY = 10 + ((maxPrice - open) / priceRange) * 80;
+                      const closeY = 10 + ((maxPrice - close) / priceRange) * 80;
+                      const highY = 10 + ((maxPrice - high) / priceRange) * 80;
+                      const lowY = 10 + ((maxPrice - low) / priceRange) * 80;
+                      
+                      const isGreen = close > open;
+                      const bodyTop = Math.min(openY, closeY);
+                      const bodyHeight = Math.abs(closeY - openY) || 1;
+                      
+                      return (
+                        <g key={price.id}>
+                          {/* Wick */}
+                          <line
+                            x1={`${x}%`}
+                            y1={`${highY}%`}
+                            x2={`${x}%`}
+                            y2={`${lowY}%`}
+                            stroke={isGreen ? "#22c55e" : "#ef4444"}
+                            strokeWidth="1"
+                          />
+                          {/* Body */}
+                          <rect
+                            x={`${x - 0.5}%`}
+                            y={`${bodyTop}%`}
+                            width="1%"
+                            height={`${(bodyHeight / window.innerHeight) * 100 * 5}%`}
+                            fill={isGreen ? "#22c55e" : "#ef4444"}
+                            opacity="0.8"
+                          />
+                        </g>
+                      );
+                    })}
+                  </svg>
+                )}
               </div>
             ) : (
               <div className="text-gray-500 text-center">

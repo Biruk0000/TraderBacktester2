@@ -154,6 +154,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/forex/current/:pair", async (req, res) => {
     try {
       const pair = req.params.pair as CurrencyPair;
+      const sessionId = req.query.sessionId ? parseInt(req.query.sessionId as string) : null;
+      
+      if (sessionId) {
+        // Get price for session's current time (backtesting)
+        const session = await storage.getSession(sessionId);
+        if (session && session.currentTime) {
+          const historicalPrice = await storage.getHistoricalPrice(pair, session.currentTime);
+          if (historicalPrice !== undefined) {
+            return res.json({ pair, price: historicalPrice, timestamp: session.currentTime });
+          }
+        }
+      }
+      
+      // Fallback to latest price
       const currentPrice = await storage.getCurrentPrice(pair);
       if (currentPrice === undefined) {
         return res.status(404).json({ message: "Price not found for pair" });

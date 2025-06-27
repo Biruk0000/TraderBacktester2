@@ -160,6 +160,144 @@ export class MemStorage implements IStorage {
       
       this.forexPrices.set(pair, prices);
     });
+    
+    // Add some sample trades for demonstration
+    this.initializeSampleTrades();
+  }
+
+  private initializeSampleTrades() {
+    // Create a sample session
+    const sampleSession: Session = {
+      id: this.currentIds.session++,
+      userId: 1,
+      name: "Demo Trading Session",
+      currencyPair: "EUR/USD",
+      startingBalance: "10000.00",
+      currentBalance: "10450.00",
+      createdAt: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000), // 7 days ago
+      updatedAt: new Date(),
+      isActive: true,
+      currentTime: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000), // 5 days ago
+      timeSpeed: 1,
+      isBacktesting: true,
+    };
+    this.sessions.set(sampleSession.id, sampleSession);
+
+    // Add some sample trades
+    const sampleTrades = [
+      {
+        sessionId: sampleSession.id,
+        currencyPair: "EUR/USD" as CurrencyPair,
+        type: "BUY",
+        positionSize: "1.50",
+        entryPrice: "1.0845",
+        stopLoss: "1.0820",
+        takeProfit: "1.0880",
+        exitPrice: "1.0875",
+        pnl: "450.00",
+        status: "CLOSED",
+        openedAt: new Date(Date.now() - 6 * 24 * 60 * 60 * 1000),
+        closedAt: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000),
+        notes: "Strong bullish momentum, hit take profit",
+      },
+      {
+        sessionId: sampleSession.id,
+        currencyPair: "GBP/USD" as CurrencyPair,
+        type: "SELL",
+        positionSize: "1.00",
+        entryPrice: "1.2680",
+        stopLoss: "1.2710",
+        takeProfit: "1.2630",
+        exitPrice: "1.2635",
+        pnl: "450.00",
+        status: "CLOSED",
+        openedAt: new Date(Date.now() - 4 * 24 * 60 * 60 * 1000),
+        closedAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000),
+        notes: "Brexit news caused volatility, good entry",
+      },
+      {
+        sessionId: sampleSession.id,
+        currencyPair: "USD/JPY" as CurrencyPair,
+        type: "BUY",
+        positionSize: "2.00",
+        entryPrice: "149.25",
+        stopLoss: "148.90",
+        takeProfit: "149.80",
+        exitPrice: "148.95",
+        pnl: "-600.00",
+        status: "CLOSED",
+        openedAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000),
+        closedAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000),
+        notes: "BOJ intervention rumors, stopped out",
+      },
+      {
+        sessionId: sampleSession.id,
+        currencyPair: "EUR/USD" as CurrencyPair,
+        type: "BUY",
+        positionSize: "1.25",
+        entryPrice: "1.0862",
+        stopLoss: "1.0840",
+        takeProfit: "1.0900",
+        status: "OPEN",
+        openedAt: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000),
+        closedAt: null,
+        exitPrice: null,
+        pnl: null,
+        notes: "ECB meeting upcoming, expecting dovish tone",
+      }
+    ];
+
+    sampleTrades.forEach(trade => {
+      const id = this.currentIds.trade++;
+      const fullTrade: Trade = {
+        id,
+        sessionId: trade.sessionId,
+        currencyPair: trade.currencyPair,
+        type: trade.type,
+        positionSize: trade.positionSize,
+        entryPrice: trade.entryPrice,
+        stopLoss: trade.stopLoss || null,
+        takeProfit: trade.takeProfit || null,
+        exitPrice: trade.exitPrice || null,
+        pnl: trade.pnl || null,
+        status: trade.status as "OPEN" | "CLOSED",
+        openedAt: trade.openedAt,
+        closedAt: trade.closedAt,
+        notes: trade.notes || null,
+      };
+      this.trades.set(id, fullTrade);
+    });
+
+    // Add sample journal entries
+    const journalEntries = [
+      {
+        sessionId: sampleSession.id,
+        tradeId: null,
+        title: "Market Analysis - EUR/USD Bullish Setup",
+        content: "EUR/USD showing strong support at 1.0840 level. ECB dovish stance creating buying opportunities. Risk/reward ratio favorable for long positions.",
+        createdAt: new Date(Date.now() - 6 * 24 * 60 * 60 * 1000),
+      },
+      {
+        sessionId: sampleSession.id,
+        tradeId: null,
+        title: "Trading Psychology Note",
+        content: "Need to stick to stop losses more strictly. Emotional trading led to holding USD/JPY too long despite clear reversal signals.",
+        createdAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000),
+      }
+    ];
+
+    journalEntries.forEach(entry => {
+      const id = this.currentIds.journal++;
+      const fullEntry: JournalEntry = {
+        id,
+        sessionId: entry.sessionId,
+        tradeId: entry.tradeId,
+        title: entry.title,
+        content: entry.content,
+        createdAt: entry.createdAt,
+      };
+      this.journalEntries.set(id, fullEntry);
+    });
   }
 
   private getBasePriceForPair(pair: CurrencyPair): number {
@@ -334,7 +472,8 @@ export class MemStorage implements IStorage {
     const prices = this.forexPrices.get(pair) || [];
     
     if (!startTime && !endTime) {
-      return prices;
+      // Return last 200 candles for chart display
+      return prices.slice(-200);
     }
     
     return prices.filter(price => {
