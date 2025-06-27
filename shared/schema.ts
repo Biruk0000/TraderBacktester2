@@ -76,7 +76,8 @@ export const insertTradeSchema = createInsertSchema(trades).omit({
   openedAt: true,
   closedAt: true,
   pnl: true,
-  status: true,
+}).extend({
+  status: z.enum(["OPEN", "CLOSED"]).optional(),
 });
 
 export const insertJournalEntrySchema = createInsertSchema(journalEntries).omit({
