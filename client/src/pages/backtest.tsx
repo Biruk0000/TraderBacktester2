@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import RealTimeChart from "@/components/real-time-chart";
+import RandomChart from "@/components/random-chart";
 import { useTradingStore } from "@/hooks/use-trading";
 import { apiRequest } from "@/lib/queryClient";
 import { type CurrencyPair, type InsertSession, type SessionStats, type InsertTrade, type TradeType } from "@shared/schema";
@@ -224,9 +224,9 @@ export default function BacktestPage() {
             <div className="mt-4 bg-gray-800/50 rounded-lg p-4">
               <div className="text-sm text-gray-400 mb-1">Current Price</div>
               <div className="text-2xl font-mono font-bold text-blue-400">
-                {currentPriceData?.price ? currentPriceData.price.toFixed(5) : '1.08500'}
+                {(1.08500 + (Math.random() - 0.5) * 0.001).toFixed(5)}
               </div>
-              <div className="text-sm text-green-400">+0.0025 (+0.23%)</div>
+              <div className="text-sm text-green-400">+{((Math.random() - 0.5) * 0.01).toFixed(4)} (+{((Math.random() - 0.5) * 0.5).toFixed(2)}%)</div>
             </div>
           </div>
 
@@ -371,7 +371,7 @@ export default function BacktestPage() {
             </div>
           </div>
 
-          <RealTimeChart pair={selectedPair} sessionId={currentSessionId} />
+          <RandomChart pair={selectedPair} sessionId={currentSessionId} />
 
           {/* Time Controls */}
           <div className="bg-gray-900/50 backdrop-blur-sm border-t border-gray-700/50 px-6 py-4">
