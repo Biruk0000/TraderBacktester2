@@ -10,6 +10,9 @@ export default function BacktestPage() {
   const [showTradeModal, setShowTradeModal] = useState(false);
   const [selectedPair, setSelectedPair] = useState<CurrencyPair>("EUR/USD");
   const [isPlaying, setIsPlaying] = useState(false);
+  const [playbackSpeed, setPlaybackSpeed] = useState(1);
+  const [backtestProgress, setBacktestProgress] = useState(0);
+  const [currentBacktestTime, setCurrentBacktestTime] = useState(new Date('2024-01-01'));
   
   const queryClient = useQueryClient();
   const {
@@ -153,15 +156,113 @@ export default function BacktestPage() {
     placeTradeMutation.mutate(tradeData);
   };
 
+  // Backtesting control functions
+  const handleStepForward = async () => {
+    if (!currentSessionId) return;
+    
+    try {
+      const response = await fetch(`/api/sessions/${currentSessionId}/advance`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ minutes: 60 * playbackSpeed }),
+      });
+      
+      if (response.ok) {
+        queryClient.invalidateQueries({ queryKey: ["/api/sessions/detail"] });
+        setBacktestProgress(prev => Math.min(prev + 2, 100));
+      }
+    } catch (error) {
+      console.error("Failed to step forward:", error);
+    }
+  };
+
+  const handleStepBackward = async () => {
+    if (!currentSessionId) return;
+    
+    try {
+      const response = await fetch(`/api/sessions/${currentSessionId}/advance`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ minutes: -60 * playbackSpeed }),
+      });
+      
+      if (response.ok) {
+        queryClient.invalidateQueries({ queryKey: ["/api/sessions/detail"] });
+        setBacktestProgress(prev => Math.max(prev - 2, 0));
+      }
+    } catch (error) {
+      console.error("Failed to step backward:", error);
+    }
+  };
+
+  const handleRunStrategy = async () => {
+    if (!currentSessionId) return;
+    
+    // Simulate automated strategy execution
+    setIsPlaying(true);
+    
+    const runInterval = setInterval(async () => {
+      try {
+        // Place random trades based on simple strategy
+        const shouldTrade = Math.random() > 0.85; // 15% chance per step
+        
+        if (shouldTrade) {
+          const tradeType: TradeType = Math.random() > 0.5 ? "BUY" : "SELL";
+          const currentPrice = 1.08500 + (Math.random() - 0.5) * 0.001;
+          
+          const tradeData: InsertTrade = {
+            sessionId: currentSessionId,
+            currencyPair: selectedPair,
+            type: tradeType,
+            positionSize: "1.00",
+            entryPrice: currentPrice.toString(),
+            stopLoss: tradeType === "BUY" ? (currentPrice - 0.002).toString() : (currentPrice + 0.002).toString(),
+            takeProfit: tradeType === "BUY" ? (currentPrice + 0.003).toString() : (currentPrice - 0.003).toString(),
+            notes: `Strategy auto-trade: ${tradeType} at ${currentPrice.toFixed(5)}`,
+          };
+
+          await fetch("/api/trades", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(tradeData),
+          });
+        }
+
+        // Advance time
+        await handleStepForward();
+        
+        // Stop when progress reaches 100%
+        if (backtestProgress >= 98) {
+          clearInterval(runInterval);
+          setIsPlaying(false);
+        }
+        
+      } catch (error) {
+        console.error("Strategy execution error:", error);
+        clearInterval(runInterval);
+        setIsPlaying(false);
+      }
+    }, 1000 / playbackSpeed);
+
+    // Stop after 30 seconds max
+    setTimeout(() => {
+      clearInterval(runInterval);
+      setIsPlaying(false);
+    }, 30000);
+  };
+
   const handleNewSession = () => {
     createSessionMutation.mutate({
       userId: 1,
-      name: `Trading Session ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}`,
+      name: `Backtest Session ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}`,
       currencyPair: selectedPair,
       startingBalance: "10000.00",
       currentBalance: "10000.00",
       isActive: true,
+      isBacktesting: true,
+      currentTime: new Date('2024-01-01'),
     });
+    setBacktestProgress(0);
   };
 
   const activeTrades = trades.filter((trade: any) => trade.status === "OPEN");
@@ -373,25 +474,43 @@ export default function BacktestPage() {
 
           <RandomChart pair={selectedPair} sessionId={currentSessionId} />
 
-          {/* Time Controls */}
+          {/* Backtesting Controls */}
           <div className="bg-gray-900/50 backdrop-blur-sm border-t border-gray-700/50 px-6 py-4">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between mb-4">
               <div className="flex items-center space-x-4">
                 <div className="text-sm text-gray-400">
-                  Backtest Time: <span className="text-white font-mono">Dec 15, 2024 14:30 UTC</span>
+                  Backtest Time: <span className="text-white font-mono">{session?.currentTime ? new Date(session.currentTime).toLocaleString() : 'Jan 1, 2024 00:00'}</span>
                 </div>
                 <div className="flex items-center space-x-2">
-                  <button className="p-2 bg-gray-700 hover:bg-gray-600 rounded-lg transition-colors">
+                  <button 
+                    onClick={() => handleStepBackward()}
+                    disabled={!currentSessionId}
+                    className="p-2 bg-gray-700 hover:bg-gray-600 disabled:bg-gray-800 disabled:cursor-not-allowed rounded-lg transition-colors"
+                  >
                     <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
                       <path fillRule="evenodd" d="M7.707 14.707a1 1 0 01-1.414 0L2.586 11a2 2 0 010-2.828L6.293 4.465a1 1 0 011.414 1.414L4.414 9H17a1 1 0 110 2H4.414l3.293 3.293a1 1 0 010 1.414z" clipRule="evenodd" />
                     </svg>
                   </button>
-                  <button className="p-2 bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors">
-                    <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clipRule="evenodd" />
-                    </svg>
+                  <button 
+                    onClick={() => setIsPlaying(!isPlaying)}
+                    disabled={!currentSessionId}
+                    className={`p-2 ${isPlaying ? 'bg-red-600 hover:bg-red-700' : 'bg-blue-600 hover:bg-blue-700'} disabled:bg-gray-800 disabled:cursor-not-allowed rounded-lg transition-colors`}
+                  >
+                    {isPlaying ? (
+                      <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zM7 8a1 1 0 012 0v4a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v4a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
+                      </svg>
+                    ) : (
+                      <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clipRule="evenodd" />
+                      </svg>
+                    )}
                   </button>
-                  <button className="p-2 bg-gray-700 hover:bg-gray-600 rounded-lg transition-colors">
+                  <button 
+                    onClick={() => handleStepForward()}
+                    disabled={!currentSessionId}
+                    className="p-2 bg-gray-700 hover:bg-gray-600 disabled:bg-gray-800 disabled:cursor-not-allowed rounded-lg transition-colors"
+                  >
                     <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
                       <path fillRule="evenodd" d="M12.293 5.293a1 1 0 011.414 0l4.707 4.707a1 1 0 010 1.414l-4.707 4.707a1 1 0 01-1.414-1.414L15.586 11H3a1 1 0 110-2h12.586l-3.293-3.293a1 1 0 010-1.414z" clipRule="evenodd" />
                     </svg>
@@ -401,26 +520,70 @@ export default function BacktestPage() {
               
               <div className="flex items-center space-x-4">
                 <div className="text-sm text-gray-400">Speed:</div>
-                <select className="bg-gray-700 border border-gray-600 rounded px-3 py-1 text-sm text-white">
-                  <option>1x</option>
-                  <option>2x</option>
-                  <option>4x</option>
-                  <option>8x</option>
+                <select 
+                  value={playbackSpeed}
+                  onChange={(e) => setPlaybackSpeed(parseInt(e.target.value))}
+                  className="bg-gray-700 border border-gray-600 rounded px-3 py-1 text-sm text-white"
+                >
+                  <option value={1}>1x</option>
+                  <option value={2}>2x</option>
+                  <option value={4}>4x</option>
+                  <option value={8}>8x</option>
                 </select>
+                <button 
+                  onClick={() => handleRunStrategy()}
+                  disabled={!currentSessionId}
+                  className="bg-gradient-to-r from-purple-500 to-pink-600 hover:from-purple-600 hover:to-pink-700 disabled:from-gray-600 disabled:to-gray-700 disabled:cursor-not-allowed px-4 py-2 rounded-lg text-white font-medium transition-all"
+                >
+                  Run Strategy
+                </button>
               </div>
             </div>
             
             {/* Progress Bar */}
-            <div className="mt-3">
+            <div className="mb-3">
               <div className="w-full bg-gray-700 rounded-full h-2">
-                <div className="bg-gradient-to-r from-blue-500 to-purple-600 h-2 rounded-full" style={{width: '35%'}}></div>
+                <div 
+                  className="bg-gradient-to-r from-blue-500 to-purple-600 h-2 rounded-full transition-all duration-300" 
+                  style={{width: `${backtestProgress}%`}}
+                ></div>
               </div>
               <div className="flex justify-between text-xs text-gray-400 mt-1">
-                <span>Start</span>
+                <span>Start: Jan 1, 2024</span>
                 <span>Current Position</span>
-                <span>End</span>
+                <span>End: Dec 31, 2024</span>
               </div>
             </div>
+
+            {/* Strategy Results */}
+            {analytics && analytics.totalTrades > 0 && (
+              <div className="grid grid-cols-5 gap-4 mt-4 pt-4 border-t border-gray-700/50">
+                <div className="text-center">
+                  <div className="text-xs text-gray-400">Total Trades</div>
+                  <div className="text-lg font-bold text-white">{analytics.totalTrades}</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-xs text-gray-400">Win Rate</div>
+                  <div className="text-lg font-bold text-blue-400">{analytics.winRate.toFixed(1)}%</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-xs text-gray-400">Total P&L</div>
+                  <div className={`text-lg font-bold ${analytics.totalPnL >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                    ${analytics.totalPnL.toFixed(2)}
+                  </div>
+                </div>
+                <div className="text-center">
+                  <div className="text-xs text-gray-400">Max Drawdown</div>
+                  <div className="text-lg font-bold text-red-400">${analytics.maxDrawdown.toFixed(2)}</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-xs text-gray-400">Avg Trade</div>
+                  <div className={`text-lg font-bold ${analytics.avgTrade >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                    ${analytics.avgTrade.toFixed(2)}
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>

@@ -204,6 +204,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.post("/api/sessions/:id/advance", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const { minutes } = req.body;
+      
+      if (minutes === undefined) {
+        return res.status(400).json({ message: "minutes is required" });
+      }
+
+      const session = await storage.advanceSessionTime(id, minutes);
+      if (!session) {
+        return res.status(404).json({ message: "Session not found" });
+      }
+
+      res.json(session);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to advance session time", error });
+    }
+  });
+
   app.post("/api/backtest/:sessionId/advance", async (req, res) => {
     try {
       const sessionId = parseInt(req.params.sessionId);
