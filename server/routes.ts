@@ -175,6 +175,49 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Backtesting routes
+  app.post("/api/backtest/:sessionId/time", async (req, res) => {
+    try {
+      const sessionId = parseInt(req.params.sessionId);
+      const { timestamp } = req.body;
+      const session = await storage.setSessionTime(sessionId, new Date(timestamp));
+      if (!session) {
+        return res.status(404).json({ message: "Session not found" });
+      }
+      res.json(session);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to set session time", error });
+    }
+  });
+
+  app.post("/api/backtest/:sessionId/advance", async (req, res) => {
+    try {
+      const sessionId = parseInt(req.params.sessionId);
+      const { minutes } = req.body;
+      const session = await storage.advanceSessionTime(sessionId, parseInt(minutes));
+      if (!session) {
+        return res.status(404).json({ message: "Session not found" });
+      }
+      res.json(session);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to advance session time", error });
+    }
+  });
+
+  app.get("/api/backtest/:pair/price/:timestamp", async (req, res) => {
+    try {
+      const pair = req.params.pair as CurrencyPair;
+      const timestamp = new Date(req.params.timestamp);
+      const price = await storage.getHistoricalPrice(pair, timestamp);
+      if (price === undefined) {
+        return res.status(404).json({ message: "Price not found for timestamp" });
+      }
+      res.json({ pair, timestamp, price });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch historical price", error });
+    }
+  });
+
   const httpServer = createServer(app);
   return httpServer;
 }

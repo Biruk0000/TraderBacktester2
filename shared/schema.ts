@@ -18,6 +18,9 @@ export const sessions = pgTable("sessions", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
   isActive: boolean("is_active").default(false).notNull(),
+  currentTime: timestamp("current_time"),
+  timeSpeed: integer("time_speed").default(1),
+  isBacktesting: boolean("is_backtesting").default(true),
 });
 
 export const trades = pgTable("trades", {

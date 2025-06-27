@@ -5,6 +5,7 @@ import Sidebar from "@/components/sidebar";
 import TradingChart from "@/components/trading-chart";
 import BottomPanel from "@/components/bottom-panel";
 import TradeModal from "@/components/trade-modal";
+import TimeControls from "@/components/time-controls";
 import { useTradingStore } from "@/hooks/use-trading";
 import { apiRequest } from "@/lib/queryClient";
 import { type CurrencyPair, type InsertSession, type SessionStats } from "@shared/schema";
@@ -13,11 +14,10 @@ export default function BacktestPage() {
   const [currentSessionId, setCurrentSessionId] = useState<number | null>(null);
   const [showTradeModal, setShowTradeModal] = useState(false);
   const [selectedPair, setSelectedPair] = useState<CurrencyPair>("EUR/USD");
+  const [isPlaying, setIsPlaying] = useState(false);
   
   const queryClient = useQueryClient();
   const {
-    tradeForm,
-    setTradeForm,
     positionSize,
     setPositionSize,
     entryPrice,
@@ -57,13 +57,13 @@ export default function BacktestPage() {
   const { data: session } = useQuery({
     queryKey: ["/api/sessions/detail", currentSessionId],
     enabled: !!currentSessionId,
-  });
+  }) as { data: any };
 
   // Fetch trades for current session
   const { data: trades = [] } = useQuery({
     queryKey: ["/api/trades/session", currentSessionId],
     enabled: !!currentSessionId,
-  });
+  }) as { data: any[] };
 
   // Fetch session analytics
   const { data: analytics } = useQuery({
@@ -74,8 +74,8 @@ export default function BacktestPage() {
   // Fetch current forex price
   const { data: currentPriceData } = useQuery({
     queryKey: ["/api/forex/current", selectedPair],
-    refetchInterval: 2000, // Update every 2 seconds
-  });
+    refetchInterval: isPlaying ? 1000 : 5000, // Faster updates when playing
+  }) as { data: { pair: string; price: number } | undefined };
 
   // Update entry price when current price changes
   useEffect(() => {
@@ -83,6 +83,24 @@ export default function BacktestPage() {
       setEntryPrice(currentPriceData.price.toString());
     }
   }, [currentPriceData?.price, setEntryPrice]);
+
+  // Auto-advance time when playing
+  useEffect(() => {
+    if (!isPlaying || !currentSessionId) return;
+
+    const interval = setInterval(async () => {
+      try {
+        await apiRequest("POST", `/api/backtest/${currentSessionId}/advance`, { minutes: 60 });
+        queryClient.invalidateQueries({ queryKey: ["/api/sessions/detail"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/forex/current"] });
+      } catch (error) {
+        console.error("Failed to advance time:", error);
+        setIsPlaying(false);
+      }
+    }, 2000); // Advance 1 hour every 2 seconds
+
+    return () => clearInterval(interval);
+  }, [isPlaying, currentSessionId, queryClient]);
 
   const handlePairChange = (pair: CurrencyPair) => {
     setSelectedPair(pair);
@@ -103,7 +121,7 @@ export default function BacktestPage() {
     });
   };
 
-  const activeTrades = trades.filter(trade => trade.status === "OPEN");
+  const activeTrades = trades.filter((trade: any) => trade.status === "OPEN");
 
   return (
     <div className="min-h-screen bg-gray-900 text-gray-100">
@@ -119,11 +137,18 @@ export default function BacktestPage() {
           onOpenTradeModal={() => setShowTradeModal(true)}
         />
         
-        <main className="flex-1 flex flex-col overflow-hidden">
+        <main className="flex-1 flex flex-col overflow-hidden relative">
           <TradingChart
             pair={selectedPair}
             currentPrice={currentPriceData?.price}
             trades={trades}
+          />
+          
+          <TimeControls
+            sessionId={currentSessionId}
+            currentTime={session && session.currentTime ? new Date(session.currentTime) : undefined}
+            isPlaying={isPlaying}
+            onPlayStateChange={setIsPlaying}
           />
           
           <BottomPanel

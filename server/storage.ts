@@ -32,6 +32,11 @@ export interface IStorage {
 
   // Analytics methods
   getSessionStats(sessionId: number): Promise<SessionStats>;
+
+  // Backtesting methods
+  getHistoricalPrice(pair: CurrencyPair, timestamp: Date): Promise<number | undefined>;
+  setSessionTime(sessionId: number, timestamp: Date): Promise<Session | undefined>;
+  advanceSessionTime(sessionId: number, minutes: number): Promise<Session | undefined>;
 }
 
 export class MemStorage implements IStorage {
@@ -62,28 +67,95 @@ export class MemStorage implements IStorage {
       const prices: ForexPrice[] = [];
       let basePrice = this.getBasePriceForPair(pair);
       
-      // Generate 100 price points for the last 100 hours
-      for (let i = 99; i >= 0; i--) {
+      // Generate extensive historical data - 6 months of hourly data (4380 hours)
+      const hoursOfData = 4380; // 6 months
+      
+      for (let i = hoursOfData - 1; i >= 0; i--) {
         const timestamp = new Date(now.getTime() - i * 60 * 60 * 1000);
-        const volatility = 0.001; // 0.1% volatility
-        const change = (Math.random() - 0.5) * volatility * basePrice;
+        
+        // Add realistic market patterns
+        const hour = timestamp.getHours();
+        const dayOfWeek = timestamp.getDay();
+        
+        // Higher volatility during market open hours and major sessions
+        let volatilityMultiplier = 1;
+        
+        // London session (8-16 GMT) - higher volatility
+        if (hour >= 8 && hour <= 16) {
+          volatilityMultiplier = 1.5;
+        }
+        // New York session (13-21 GMT) - highest volatility
+        if (hour >= 13 && hour <= 21) {
+          volatilityMultiplier = 2.0;
+        }
+        // Asian session (0-8 GMT) - lower volatility
+        if (hour >= 0 && hour <= 8) {
+          volatilityMultiplier = 0.7;
+        }
+        
+        // Weekend gaps (lower activity)
+        if (dayOfWeek === 0 || dayOfWeek === 6) {
+          volatilityMultiplier *= 0.3;
+        }
+        
+        // Base volatility varies by pair
+        let baseVolatility = 0.0008; // 0.08% base volatility
+        if (pair === 'GBP/USD' || pair === 'EUR/GBP') {
+          baseVolatility = 0.0012; // More volatile pairs
+        }
+        if (pair === 'USD/JPY') {
+          baseVolatility = 0.0006; // Less volatile
+        }
+        
+        const volatility = baseVolatility * volatilityMultiplier;
+        
+        // Add trend bias (some periods trending up/down)
+        const trendCycle = Math.sin((i / 168) * Math.PI * 2); // Weekly trend cycle
+        const trendBias = trendCycle * 0.0002;
+        
+        // Random walk with trend bias
+        const change = (Math.random() - 0.5) * volatility * basePrice + trendBias * basePrice;
         basePrice += change;
         
-        const high = basePrice + Math.random() * volatility * basePrice * 0.5;
-        const low = basePrice - Math.random() * volatility * basePrice * 0.5;
+        // Ensure price doesn't drift too far from realistic levels
+        const originalPrice = this.getBasePriceForPair(pair);
+        if (Math.abs(basePrice - originalPrice) > originalPrice * 0.15) {
+          basePrice = originalPrice + (basePrice - originalPrice) * 0.5;
+        }
+        
+        // Generate OHLC data
+        const spread = volatility * basePrice * 0.3;
+        const high = basePrice + Math.random() * spread;
+        const low = basePrice - Math.random() * spread;
         const open = low + Math.random() * (high - low);
         const close = low + Math.random() * (high - low);
+        
+        // Ensure OHLC relationships are valid
+        const validHigh = Math.max(open, close, high);
+        const validLow = Math.min(open, close, low);
+        
+        // Add realistic volume patterns
+        let volume = 50000 + Math.random() * 100000;
+        volume *= volatilityMultiplier; // Higher volume during active sessions
+        
+        // Add volume spikes during major moves
+        if (Math.abs(change) > volatility * basePrice * 0.7) {
+          volume *= 1.5 + Math.random();
+        }
         
         prices.push({
           id: this.currentIds.price++,
           pair,
           timestamp,
           open: open.toFixed(5),
-          high: high.toFixed(5),
-          low: low.toFixed(5),
+          high: validHigh.toFixed(5),
+          low: validLow.toFixed(5),
           close: close.toFixed(5),
-          volume: Math.floor(Math.random() * 100000) + 50000,
+          volume: Math.floor(volume),
         });
+        
+        // Update base price for next candle
+        basePrice = close;
       }
       
       this.forexPrices.set(pair, prices);
@@ -134,6 +206,9 @@ export class MemStorage implements IStorage {
       createdAt: now,
       updatedAt: now,
       isActive: insertSession.isActive ?? false,
+      currentTime: new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000), // Start 30 days ago for backtesting
+      timeSpeed: 1,
+      isBacktesting: true,
     };
     this.sessions.set(id, session);
     return session;
@@ -321,6 +396,52 @@ export class MemStorage implements IStorage {
       winningTrades,
       losingTrades,
     };
+  }
+
+  // Backtesting methods
+  async getHistoricalPrice(pair: CurrencyPair, timestamp: Date): Promise<number | undefined> {
+    const prices = this.forexPrices.get(pair) || [];
+    
+    // Find the closest price data to the requested timestamp
+    let closestPrice = null;
+    let minTimeDiff = Infinity;
+    
+    for (const price of prices) {
+      const timeDiff = Math.abs(price.timestamp.getTime() - timestamp.getTime());
+      if (timeDiff < minTimeDiff) {
+        minTimeDiff = timeDiff;
+        closestPrice = price;
+      }
+    }
+    
+    return closestPrice ? parseFloat(closestPrice.close) : undefined;
+  }
+
+  async setSessionTime(sessionId: number, timestamp: Date): Promise<Session | undefined> {
+    const session = this.sessions.get(sessionId);
+    if (!session) return undefined;
+    
+    const updatedSession = { 
+      ...session, 
+      currentTime: timestamp,
+      updatedAt: new Date() 
+    };
+    this.sessions.set(sessionId, updatedSession);
+    return updatedSession;
+  }
+
+  async advanceSessionTime(sessionId: number, minutes: number): Promise<Session | undefined> {
+    const session = this.sessions.get(sessionId);
+    if (!session || !session.currentTime) return undefined;
+    
+    const newTime = new Date(session.currentTime.getTime() + minutes * 60 * 1000);
+    const updatedSession = { 
+      ...session, 
+      currentTime: newTime,
+      updatedAt: new Date() 
+    };
+    this.sessions.set(sessionId, updatedSession);
+    return updatedSession;
   }
 }
 
